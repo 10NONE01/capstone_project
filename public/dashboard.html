@@ -1,0 +1,114 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>Dashboard | Mobile Auto Basics</title>
+
+    <link rel="stylesheet" href="style.css">
+    <script src="dashboard.js" defer></script>
+</head>
+
+<body>
+
+    <header>
+        <nav class="navbar">
+
+            <div class="brand">
+                <img src="assets/images/logo.png"
+                     alt="Mobile Auto Basics Logo"
+                     class="logo">
+
+                <h2>Mobile Auto Basics</h2>
+            </div>
+
+            <div class="nav-links">
+                <a href="index.html">Home</a>
+
+                <button type="button"
+                        id="dashboard-logout">
+                    Logout
+                </button>
+            </div>
+
+        </nav>
+    </header>
+
+    <main class="dashboard-page">
+
+        <h1 id="dashboard-title">Loading Dashboard...</h1>
+
+        <p id="dashboard-message" role="status"></p>
+
+        <!-- Customer Dashboard -->
+        <section id="customer-dashboard" hidden>
+
+            <h2>Customer Portal</h2>
+
+            <div class="dashboard-grid">
+
+                <div class="dashboard-card">
+                    <h3>My Appointments</h3>
+                    <p>View your scheduled services.</p>
+                </div>
+
+                <div class="dashboard-card">
+                    <h3>My Vehicles</h3>
+                    <p>Manage your vehicle information.</p>
+                </div>
+
+                <div class="dashboard-card">
+                    <h3>My Receipts</h3>
+                    <p>View your service history.</p>
+                </div>
+
+            </div>
+
+            <button id="customer-api-test"
+                    class="dashboard-action">
+                Test Customer API
+            </button>
+
+        </section>
+
+        <!-- Mechanic Dashboard -->
+        <section id="mechanic-dashboard" hidden>
+
+            <h2>Mechanic Portal</h2>
+
+            <div class="dashboard-grid">
+
+                <div class="dashboard-card">
+                    <h3>Work Tickets</h3>
+                    <p>View assigned repair jobs.</p>
+                </div>
+
+                <div class="dashboard-card">
+                    <h3>Job Schedule</h3>
+                    <p>Review scheduled appointments.</p>
+                </div>
+
+                <div class="dashboard-card">
+                    <h3>Customer Information</h3>
+                    <p>View details for assigned jobs.</p>
+                </div>
+
+            </div>
+
+            <button id="mechanic-api-test"
+                    class="dashboard-action">
+                Test Mechanic API
+            </button>
+
+        </section>
+
+        <pre id="dashboard-api-result"></pre>
+
+    </main>
+
+</body>
+</html>

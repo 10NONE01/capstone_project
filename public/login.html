@@ -10,10 +10,12 @@
     <title>Login | Mobile Auto Basics</title>
 
     <link rel="stylesheet" href="style.css">
+    <script src="login.js" defer></script>
 </head>
 
 <body>
 
+    <!-- Navigation Bar -->
     <header>
         <nav class="navbar">
 
@@ -32,6 +34,7 @@
         </nav>
     </header>
 
+    <!-- Login Section -->
     <main class="login-page">
 
         <div class="login-container">
@@ -40,8 +43,18 @@
 
             <p>Sign in to your Mobile Auto Basics account.</p>
 
+            <!-- Login Form -->
             <form id="login-form">
 
+                <!-- Role selection for capstone RBAC testing -->
+                <label for="login-role">Sign in as</label>
+
+                <select id="login-role" name="role" required>
+                    <option value="customer">Customer</option>
+                    <option value="mechanic">Mechanic</option>
+                </select>
+
+                <!-- Email -->
                 <label for="email">Email Address</label>
 
                 <input
@@ -52,7 +65,7 @@
                     autocomplete="username"
                     required
                 >
-
+                <!-- Password -->
                 <label for="password">Password</label>
 
                 <input
@@ -69,6 +82,12 @@
                 </button>
 
             </form>
+
+            <!-- Login Feedback -->
+            <p id="login-message"
+               role="status"
+               aria-live="polite">
+            </p>
 
         </div>
 
