@@ -1,0 +1,30 @@
+
+{
+  "name": "capstone_project",
+  "version": "1.0.0",
+  "description": "SecureAuto - Mobile Auto Basics Cybersecurity Capstone",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --env-file=.env server.js",
+    "dev": "node --env-file=.env server.js",
+    "db:init": "node scripts/init-db.js",
+    "db:seed": "node scripts/seed-users.js",
+    "db:rbac": "node scripts/setup-rbac-demo.js",
+    "password:reset": "node scripts/reset-password.js",
+    "password:verify": "node scripts/verify-password.js"
+  },
+  "keywords": [
+    "capstone",
+    "cybersecurity",
+    "authentication",
+    "rbac",
+    "mobile-mechanic"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^5.3.0",
+    "express-session": "^1.19.0"
+  }
+}

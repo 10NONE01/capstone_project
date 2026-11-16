@@ -386,8 +386,10 @@ footer {
     font-weight: bold;
 }
 
-/* Input Fields */
-#login-form input {
+
+/* Login inputs and role dropdown */
+#login-form input,
+#login-form select {
     padding: 12px;
     border: 1px solid #555555;
     border-radius: 5px;
@@ -396,11 +398,13 @@ footer {
     font-size: 16px;
 }
 
-/* Input Focus */
-#login-form input:focus {
+/* Focus styling */
+#login-form input:focus,
+#login-form select:focus {
     outline: 2px solid #D91E12;
     border-color: #D91E12;
 }
+
 
 /* Login Submit Button */
 .login-submit {
@@ -416,4 +420,130 @@ footer {
 
 .login-submit:hover {
     background-color: #A9150C;
+}
+
+
+/* Authentication feedback */
+#login-message {
+    text-align: center;
+    color: white;
+    margin-top: 20px;
+}
+
+/* Account testing panel */
+#account-panel {
+    margin-top: 20px;
+    text-align: center;
+}
+
+#account-panel[hidden],
+#login-form[hidden] {
+    display: none;
+}
+
+#account-panel h2 {
+    color: white;
+}
+
+#account-panel button {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    margin: 10px 0;
+    background-color: #D91E12;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+#account-panel button:hover {
+    background-color: #A9150C;
+}
+
+#api-result {
+    background-color: #202020;
+    color: white;
+    padding: 15px;
+    text-align: left;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+
+/* Dashboard */
+.dashboard-page {
+    padding: 60px;
+    min-height: 75vh;
+    background-color: #202020;
+}
+
+.dashboard-page h1 {
+    color: white;
+    font-size: 36px;
+}
+
+.dashboard-page h2 {
+    color: #D91E12;
+}
+
+/* Dashboard Grid */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 25px;
+    margin-top: 30px;
+}
+
+/* Dashboard Cards */
+.dashboard-card {
+    background-color: #303030;
+    padding: 30px;
+    border: 1px solid #444444;
+    border-radius: 10px;
+}
+
+.dashboard-card h3 {
+    color: white;
+}
+
+.dashboard-card p {
+    color: #BBBBBB;
+}
+
+/* Dashboard Buttons */
+.dashboard-action,
+#dashboard-logout {
+    background-color: #D91E12;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.dashboard-action {
+    padding: 12px 20px;
+    margin-top: 30px;
+}
+
+#dashboard-logout {
+    padding: 10px 20px;
+    font-size: 16px;
+}
+
+.dashboard-action:hover,
+#dashboard-logout:hover {
+    background-color: #A9150C;
+}
+
+/* Hide inactive dashboards */
+#customer-dashboard[hidden],
+#mechanic-dashboard[hidden] {
+    display: none;
+}
+
+#dashboard-api-result {
+    color: white;
+    white-space: pre-wrap;
+    margin-top: 25px;
 }
