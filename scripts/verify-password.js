@@ -5,7 +5,7 @@ const path = require("node:path");
 const readline = require("node:readline");
 
 const db = new DatabaseSync(
-    path.join(__dirname, "database", "mobile_auto_basics.db")
+    path.join(__dirname, "..", "database", "mobile_auto_basics.db")
 );
 
 // Ask for the account email

@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 // Location of our database folder
-const databaseFolder = path.join(__dirname, "database");
+const databaseFolder = path.join(__dirname, "..", "database");
 
 // Location of our SQLite database file
 const databasePath = path.join(

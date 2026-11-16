@@ -4,7 +4,7 @@ const { randomBytes, scryptSync } = require("node:crypto");
 const path = require("node:path");
 
 const db = new DatabaseSync(
-    path.join(__dirname, "database", "mobile_auto_basics.db")
+    path.join(__dirname, "..", "database", "mobile_auto_basics.db")
 );
 
 db.exec("PRAGMA foreign_keys = ON");

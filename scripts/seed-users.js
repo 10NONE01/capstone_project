@@ -5,7 +5,7 @@ const path = require("node:path");
 
 // Open our SQLite database
 const db = new DatabaseSync(
-    path.join(__dirname, "database", "mobile_auto_basics.db")
+    path.join(__dirname, "..", "database", "mobile_auto_basics.db")
 );
 
 // Create a salted password hash
