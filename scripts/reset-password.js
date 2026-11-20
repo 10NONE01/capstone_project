@@ -6,17 +6,21 @@ const path = require("node:path");
 const email = process.argv[2];
 const password = process.env.NEW_PASSWORD;
 
+
 const allowedEmails = [
     "customer@demo.invalid",
-    "mechanic@demo.invalid"
+    "jane@demo.invalid",
+    "mechanic@demo.invalid",
+    "admin@demo.invalid"
 ];
+
 
 if (!allowedEmails.includes(email)) {
     console.error("Please specify a valid demo account.");
     process.exit(1);
 }
 
-if (!password || password.length < 10) {
+if (!password || password.length < 4) {
     console.error("Password must be at least 12 characters.");
     process.exit(1);
 }

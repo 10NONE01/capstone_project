@@ -1,19 +1,40 @@
 
-# Installed Node.js packages
+# Mobile Auto Basics - Git Ignore
+
+# Node.js dependencies
 node_modules/
 
-# Secret environment files
+# Environment variables and secrets
 .env
 .env.*
 !.env.example
 
+# Logs
+*.log
+npm-debug.log*
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Build files
+dist/
+build/
+
 # SQLite databases
 *.db
+*.sqlite
+*.sqlite3
+
+# SQLite temporary files
 *.db-journal
 *.db-wal
 *.db-shm
 
-# Debug logs
-*.log
+# Allow the fictional capstone database
+!database/mobile_auto_basics.db
 
-backup-old-files/
+# Temporary and backup files
+*.swp
+*.swo
+*.backup
