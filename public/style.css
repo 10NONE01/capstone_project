@@ -547,3 +547,59 @@ footer {
     white-space: pre-wrap;
     margin-top: 25px;
 }
+
+
+/* ==================================
+   Customer Appointments
+================================== */
+
+.appointments-section {
+    margin-top: 50px;
+}
+
+.appointments-section h2 {
+    color: #D91E12;
+    margin-bottom: 15px;
+}
+
+#appointments-message {
+    color: #CCCCCC;
+    margin-bottom: 20px;
+}
+
+#appointments-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+}
+
+.appointment-card {
+    background-color: #303030;
+    border: 1px solid #444444;
+    border-radius: 10px;
+    padding: 25px;
+}
+
+.appointment-card h3 {
+    color: white;
+    margin-bottom: 15px;
+}
+
+.appointment-card p {
+    color: #CCCCCC;
+    margin-bottom: 8px;
+}
+
+
+/* Mechanic Work Tickets */
+
+#tickets-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+}
+
+#tickets-message {
+    color: #CCCCCC;
+    margin-bottom: 20px;
+}

@@ -13,6 +13,6 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
 
     role TEXT NOT NULL
-        CHECK (role IN ('customer', 'mechanic'))
+        CHECK (role IN ('customer', 'mechanic', 'admin'))
 
 );

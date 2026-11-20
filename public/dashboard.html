@@ -15,13 +15,16 @@
 
 <body>
 
+    <!-- NAVIGATION BAR -->
     <header>
         <nav class="navbar">
 
             <div class="brand">
-                <img src="assets/images/logo.png"
-                     alt="Mobile Auto Basics Logo"
-                     class="logo">
+                <img
+                    src="assets/images/logo.png"
+                    alt="Mobile Auto Basics Logo"
+                    class="logo"
+                >
 
                 <h2>Mobile Auto Basics</h2>
             </div>
@@ -29,8 +32,10 @@
             <div class="nav-links">
                 <a href="index.html">Home</a>
 
-                <button type="button"
-                        id="dashboard-logout">
+                <button
+                    type="button"
+                    id="dashboard-logout"
+                >
                     Logout
                 </button>
             </div>
@@ -38,13 +43,25 @@
         </nav>
     </header>
 
+
+    <!-- MAIN DASHBOARD -->
     <main class="dashboard-page">
 
-        <h1 id="dashboard-title">Loading Dashboard...</h1>
+        <h1 id="dashboard-title">
+            Loading Dashboard...
+        </h1>
 
-        <p id="dashboard-message" role="status"></p>
+        <p
+            id="dashboard-message"
+            role="status"
+            aria-live="polite"
+        ></p>
 
-        <!-- Customer Dashboard -->
+
+        <!-- ============================
+             CUSTOMER DASHBOARD
+        ============================= -->
+
         <section id="customer-dashboard" hidden>
 
             <h2>Customer Portal</h2>
@@ -68,14 +85,40 @@
 
             </div>
 
-            <button id="customer-api-test"
-                    class="dashboard-action">
+
+            <!-- CUSTOMER APPOINTMENTS -->
+            <div class="appointments-section">
+
+                <h2>My Scheduled Services</h2>
+
+                <p
+                    id="appointments-message"
+                    role="status"
+                    aria-live="polite"
+                >
+                    Loading your appointments...
+                </p>
+
+                <div id="appointments-list"></div>
+
+            </div>
+
+
+            <button
+                type="button"
+                id="customer-api-test"
+                class="dashboard-action"
+            >
                 Test Customer API
             </button>
 
         </section>
 
-        <!-- Mechanic Dashboard -->
+
+        <!-- ============================
+             MECHANIC DASHBOARD
+        ============================= -->
+
         <section id="mechanic-dashboard" hidden>
 
             <h2>Mechanic Portal</h2>
@@ -99,13 +142,102 @@
 
             </div>
 
-            <button id="mechanic-api-test"
-                    class="dashboard-action">
+
+            <!-- MECHANIC WORK TICKETS -->
+            <div class="appointments-section">
+
+                <h2>My Assigned Work Tickets</h2>
+
+                <p
+                    id="tickets-message"
+                    role="status"
+                    aria-live="polite"
+                >
+                    Loading work tickets...
+                </p>
+
+                <div id="tickets-list"></div>
+
+            </div>
+
+
+            <button
+                type="button"
+                id="mechanic-api-test"
+                class="dashboard-action"
+            >
                 Test Mechanic API
             </button>
 
         </section>
 
+
+        <!-- ============================
+             ADMINISTRATOR DASHBOARD
+        ============================= -->
+
+        <section id="admin-dashboard" hidden>
+
+            <h2>Administrator Portal</h2>
+
+            <div class="dashboard-grid">
+
+                <div class="dashboard-card">
+                    <h3>Security Audit Logs</h3>
+                    <p>
+                        Review login activity and
+                        unauthorized access attempts.
+                    </p>
+                </div>
+
+                <div class="dashboard-card">
+                    <h3>User Management</h3>
+                    <p>
+                        Review customer and mechanic accounts.
+                        Feature coming later.
+                    </p>
+                </div>
+
+                <div class="dashboard-card">
+                    <h3>System Overview</h3>
+                    <p>
+                        Review application security activity.
+                        Feature coming later.
+                    </p>
+                </div>
+
+            </div>
+
+
+            <!-- ADMINISTRATOR AUDIT LOGS -->
+            <div class="appointments-section">
+
+                <h2>Security Audit Logs</h2>
+
+                <p
+                    id="admin-message"
+                    role="status"
+                    aria-live="polite"
+                >
+                    Loading security audit logs...
+                </p>
+
+                <div id="audit-logs-list"></div>
+
+            </div>
+
+            <button
+                type="button"
+                id="refresh-audit-logs"
+                class="dashboard-action"
+            >
+                Refresh Security Logs
+            </button>
+
+        </section>
+
+
+        <!-- API TEST RESULTS -->
         <pre id="dashboard-api-result"></pre>
 
     </main>

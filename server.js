@@ -10,29 +10,52 @@ const {
     timingSafeEqual
 } = require("node:crypto");
 
-// =======================================
+// ========================================
 // 1. EXPRESS SERVER SETUP
-// =======================================
+// ========================================
 
 const app = express();
 const PORT = 4100;
 
-// Connect to the existing SQLite database
+// Connect to our existing SQLite database
 const db = new DatabaseSync(
     path.join(__dirname, "database", "mobile_auto_basics.db")
 );
 
 db.exec("PRAGMA foreign_keys = ON");
 
-// Allow the server to receive JSON
+// ========================================
+// 2. CREATE SECURITY AUDIT LOG TABLE
+// ========================================
+
+// This does not erase existing records.
+// The table is created only if it does not exist.
+
+db.exec(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        event_type TEXT NOT NULL,
+        resource TEXT,
+        details TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+        FOREIGN KEY (user_id)
+            REFERENCES users(id)
+            ON DELETE SET NULL
+    )
+`);
+
+// ========================================
+// 3. EXPRESS MIDDLEWARE AND SESSIONS
+// ========================================
+
 app.use(express.json({ limit: "10kb" }));
 
-// Session secret must be stored in .env
 if (!process.env.SESSION_SECRET) {
     throw new Error("SESSION_SECRET is missing");
 }
 
-// Configure login sessions
 app.use(session({
     name: "mab.sid",
     secret: process.env.SESSION_SECRET,
@@ -41,14 +64,14 @@ app.use(session({
     cookie: {
         httpOnly: true,
         sameSite: "lax",
-        secure: false, // Local development only
+        secure: false, // Local HTTP testing only
         maxAge: 60 * 60 * 1000
     }
 }));
 
-// =======================================
-// 2. SERVER HEALTH CHECK
-// =======================================
+// ========================================
+// 4. HEALTH CHECK
+// ========================================
 
 app.get("/api/health", (req, res) => {
     res.json({
@@ -57,9 +80,9 @@ app.get("/api/health", (req, res) => {
     });
 });
 
-// =======================================
-// 3. PASSWORD VERIFICATION
-// =======================================
+// ========================================
+// 5. PASSWORD VERIFICATION
+// ========================================
 
 function verifyPassword(password, storedPassword) {
 
@@ -91,9 +114,45 @@ function verifyPassword(password, storedPassword) {
     }
 }
 
-// =======================================
-// 4. LOGIN AUTHENTICATION
-// =======================================
+// ========================================
+// 6. SECURITY AUDIT LOGGING
+// ========================================
+
+function logAudit(userId, eventType, resource, details) {
+
+    try {
+        const insert = db.prepare(`
+            INSERT INTO audit_logs (
+                user_id,
+                event_type,
+                resource,
+                details
+            )
+            VALUES (?, ?, ?, ?)
+        `);
+
+        insert.run(
+            userId,
+            eventType,
+            resource,
+            details
+        );
+
+        console.log(
+            `[AUDIT] ${eventType}: ${details}`
+        );
+
+    } catch (error) {
+        console.error(
+            "Audit logging failed:",
+            error.message
+        );
+    }
+}
+
+// ========================================
+// 7. LOGIN AUTHENTICATION
+// ========================================
 
 app.post("/api/login", (req, res, next) => {
 
@@ -103,7 +162,7 @@ app.post("/api/login", (req, res, next) => {
         selectedRole
     } = req.body || {};
 
-    // Validate login information
+    // Validate email and password
     if (
         typeof email !== "string" ||
         typeof password !== "string" ||
@@ -117,8 +176,8 @@ app.post("/api/login", (req, res, next) => {
         });
     }
 
-    // Validate the dropdown selection
-    const allowedRoles = ["customer", "mechanic"];
+    // Capstone role selection
+    const allowedRoles = ["customer", "mechanic", "admin"];
 
     if (!allowedRoles.includes(selectedRole)) {
         return res.status(400).json({
@@ -126,31 +185,51 @@ app.post("/api/login", (req, res, next) => {
         });
     }
 
-    // Look up account in SQLite
+    // Find account in SQLite
     const user = db.prepare(`
-        SELECT id, name, email, password_hash, role
+        SELECT
+            id,
+            name,
+            email,
+            password_hash,
+            role
         FROM users
         WHERE email = ?
     `).get(email.trim());
 
-    // Verify account password
+    // Check the password
     if (
         !user ||
         !verifyPassword(password, user.password_hash)
     ) {
+        logAudit(
+            null,
+            "LOGIN_FAILED",
+            "/api/login",
+            "Invalid login credentials"
+        );
+
         return res.status(401).json({
             error: "Invalid credentials or account type."
         });
     }
 
-    // Capstone role-selection test
+    // Verify selected role against SQLite
     if (selectedRole !== user.role) {
+
+        logAudit(
+            user.id,
+            "LOGIN_FAILED",
+            "/api/login",
+            "Selected role does not match account role"
+        );
+
         return res.status(401).json({
             error: "Invalid credentials or account type."
         });
     }
 
-    // Create a new authenticated session
+    // Create a new session after authentication
     req.session.regenerate((err) => {
 
         if (err) return next(err);
@@ -160,6 +239,14 @@ app.post("/api/login", (req, res, next) => {
         req.session.save((err) => {
 
             if (err) return next(err);
+
+            // NEW: Log successful authentication
+            logAudit(
+                user.id,
+                "LOGIN_SUCCESS",
+                "/api/login",
+                `User authenticated as ${user.role}`
+            );
 
             res.json({
                 message: "Login successful",
@@ -173,9 +260,9 @@ app.post("/api/login", (req, res, next) => {
     });
 });
 
-// =======================================
-// 5. AUTHENTICATION MIDDLEWARE
-// =======================================
+// ========================================
+// 8. AUTHENTICATION MIDDLEWARE
+// ========================================
 
 function requireAuth(req, res, next) {
 
@@ -201,15 +288,24 @@ function requireAuth(req, res, next) {
     next();
 }
 
-// =======================================
-// 6. ROLE-BASED ACCESS CONTROL
-// =======================================
+// ========================================
+// 9. ROLE-BASED ACCESS CONTROL (RBAC)
+// ========================================
 
 function requireRole(role) {
 
     return (req, res, next) => {
 
         if (req.user.role !== role) {
+
+            // NEW: Record unauthorized access
+            logAudit(
+                req.user.id,
+                "ACCESS_DENIED",
+                req.path,
+                `Role ${req.user.role} attempted ${role} access`
+            );
+
             return res.status(403).json({
                 error: "Access denied"
             });
@@ -219,9 +315,9 @@ function requireRole(role) {
     };
 }
 
-// =======================================
-// 7. CURRENT LOGGED-IN USER
-// =======================================
+// ========================================
+// 10. CURRENT AUTHENTICATED USER
+// ========================================
 
 app.get("/api/me", requireAuth, (req, res) => {
 
@@ -230,9 +326,9 @@ app.get("/api/me", requireAuth, (req, res) => {
     });
 });
 
-// =======================================
-// 8. CUSTOMER DASHBOARD API
-// =======================================
+// ========================================
+// 11. CUSTOMER DASHBOARD API
+// ========================================
 
 app.get(
     "/api/customer/dashboard",
@@ -247,26 +343,9 @@ app.get(
     }
 );
 
-// =======================================
-// 9. MECHANIC DASHBOARD API
-// =======================================
-
-app.get(
-    "/api/mechanic/tickets",
-    requireAuth,
-    requireRole("mechanic"),
-    (req, res) => {
-
-        res.json({
-            message: "Mechanic access granted",
-            tickets: []
-        });
-    }
-);
-
-// =======================================
-// 10. CUSTOMER APPOINTMENT LIST
-// =======================================
+// ========================================
+// 12. CUSTOMER APPOINTMENT LIST
+// ========================================
 
 app.get(
     "/api/customer/appointments",
@@ -274,10 +353,13 @@ app.get(
     requireRole("customer"),
     (req, res) => {
 
-        // Only retrieve appointments
-        // belonging to the logged-in customer
+        // Only return the logged-in customer's records
         const appointments = db.prepare(`
-            SELECT id, service, vehicle, status
+            SELECT
+                id,
+                service,
+                vehicle,
+                status
             FROM demo_appointments
             WHERE customer_id = ?
             ORDER BY id
@@ -289,9 +371,9 @@ app.get(
     }
 );
 
-// =======================================
-// 11. SINGLE APPOINTMENT ACCESS
-// =======================================
+// ========================================
+// 13. SINGLE CUSTOMER APPOINTMENT
+// ========================================
 
 app.get(
     "/api/customer/appointments/:id",
@@ -301,7 +383,7 @@ app.get(
 
         const appointmentId = Number(req.params.id);
 
-        // Ensure the ID is a valid positive integer
+        // Validate appointment ID
         if (
             !Number.isSafeInteger(appointmentId) ||
             appointmentId <= 0
@@ -311,16 +393,28 @@ app.get(
             });
         }
 
-        // Verify both appointment ID
-        // and authenticated customer ID
+        // Check ID and ownership together
         const appointment = db.prepare(`
-            SELECT id, service, vehicle, status
+            SELECT
+                id,
+                service,
+                vehicle,
+                status
             FROM demo_appointments
             WHERE id = ?
               AND customer_id = ?
         `).get(appointmentId, req.user.id);
 
         if (!appointment) {
+
+            // NEW: Log failed appointment access
+            logAudit(
+                req.user.id,
+                "APPOINTMENT_ACCESS_DENIED",
+                "/api/customer/appointments/:id",
+                `Appointment ${appointmentId} unavailable to user`
+            );
+
             return res.status(404).json({
                 error: "Appointment not found"
             });
@@ -332,35 +426,119 @@ app.get(
     }
 );
 
-// =======================================
-// 12. LOGOUT
-// =======================================
+// ========================================
+// 14. MECHANIC WORK TICKETS
+// ========================================
 
-app.post("/api/logout", requireAuth, (req, res, next) => {
+app.get(
+    "/api/mechanic/tickets",
+    requireAuth,
+    requireRole("mechanic"),
+    (req, res) => {
 
-    req.session.destroy((err) => {
+        // Only jobs assigned to this mechanic
+        const tickets = db.prepare(`
+            SELECT
+                wt.id,
+                wt.appointment_id,
+                wt.status,
+                a.service,
+                a.vehicle,
+                u.name AS customer_name
 
-        if (err) return next(err);
+            FROM demo_work_tickets AS wt
 
-        res.clearCookie("mab.sid");
+            JOIN demo_appointments AS a
+                ON a.id = wt.appointment_id
+
+            JOIN users AS u
+                ON u.id = a.customer_id
+
+            WHERE wt.mechanic_id = ?
+
+            ORDER BY wt.id
+        `).all(req.user.id);
 
         res.json({
-            message: "Logged out successfully"
+            tickets: tickets
         });
-    });
-});
+    }
+);
 
-// =======================================
-// 13. SERVE WEBSITE FILES
-// =======================================
+// ========================================
+// 15. LOGOUT WITH AUDIT LOGGING
+// ========================================
+
+app.post(
+    "/api/logout",
+    requireAuth,
+    (req, res, next) => {
+
+        const userId = req.user.id;
+
+        req.session.destroy((err) => {
+
+            if (err) return next(err);
+
+            // NEW: Record successful logout
+            logAudit(
+                userId,
+                "LOGOUT",
+                "/api/logout",
+                "User logged out successfully"
+            );
+
+            res.clearCookie("mab.sid");
+
+            res.json({
+                message: "Logged out successfully"
+            });
+        });
+    }
+);
+
+
+// ========================================
+// ADMINISTRATOR - SECURITY AUDIT LOGS
+// ========================================
+
+app.get(
+    "/api/admin/audit-logs",
+    requireAuth,
+    requireRole("admin"),
+    (req, res) => {
+
+        // Retrieve the 50 most recent security events
+        const logs = db.prepare(`
+            SELECT
+                id,
+                user_id,
+                event_type,
+                resource,
+                details,
+                created_at
+            FROM audit_logs
+            ORDER BY id DESC
+            LIMIT 50
+        `).all();
+
+        res.json({
+            logs: logs
+        });
+    }
+);
+
+// ========================================
+// 16. SERVE FRONTEND FILES
+// ========================================
 
 app.use(express.static(
     path.join(__dirname, "public")
 ));
 
-// =======================================
-// 14. START SERVER
-// =======================================
+// ========================================
+// 17. START SERVER
+// ========================================
 
 app.listen(PORT, "127.0.0.1", () => {
 

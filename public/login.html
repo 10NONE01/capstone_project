@@ -15,7 +15,10 @@
 
 <body>
 
-    <!-- Navigation Bar -->
+    <!-- ==================================
+         NAVIGATION BAR
+    ================================== -->
+
     <header>
         <nav class="navbar">
 
@@ -34,28 +37,53 @@
         </nav>
     </header>
 
-    <!-- Login Section -->
+
+    <!-- ==================================
+         LOGIN SECTION
+    ================================== -->
+
     <main class="login-page">
 
         <div class="login-container">
 
             <h1>Welcome Back</h1>
 
-            <p>Sign in to your Mobile Auto Basics account.</p>
+            <p>
+                Sign in to your Mobile Auto Basics account.
+            </p>
 
-            <!-- Login Form -->
+
+            <!-- LOGIN FORM -->
             <form id="login-form">
 
-                <!-- Role selection for capstone RBAC testing -->
-                <label for="login-role">Sign in as</label>
+                <!-- Role Selection -->
+                <label for="login-role">
+                    Sign in as
+                </label>
 
-                <select id="login-role" name="role" required>
-                    <option value="customer">Customer</option>
-                    <option value="mechanic">Mechanic</option>
+                <select
+                    id="login-role"
+                    name="role"
+                    required
+                >
+                    <option value="customer">
+                        Customer
+                    </option>
+
+                    <option value="mechanic">
+                        Mechanic
+                    </option>
+
+                    <option value="admin">
+                        Administrator
+                    </option>
                 </select>
 
-                <!-- Email -->
-                <label for="email">Email Address</label>
+
+                <!-- Email Address -->
+                <label for="email">
+                    Email Address
+                </label>
 
                 <input
                     type="email"
@@ -65,8 +93,12 @@
                     autocomplete="username"
                     required
                 >
+
+
                 <!-- Password -->
-                <label for="password">Password</label>
+                <label for="password">
+                    Password
+                </label>
 
                 <input
                     type="password"
@@ -77,17 +109,24 @@
                     required
                 >
 
-                <button type="submit" class="login-submit">
+
+                <!-- Login Button -->
+                <button
+                    type="submit"
+                    class="login-submit"
+                >
                     Login
                 </button>
 
             </form>
 
+
             <!-- Login Feedback -->
-            <p id="login-message"
-               role="status"
-               aria-live="polite">
-            </p>
+            <p
+                id="login-message"
+                role="status"
+                aria-live="polite"
+            ></p>
 
         </div>
 
