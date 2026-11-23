@@ -6,23 +6,42 @@ const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
 const {
+    createHmac,
+    randomBytes,
+    scrypt,
     scryptSync,
     timingSafeEqual
 } = require("node:crypto");
+
+const { promisify } = require("node:util");
+
+const helmet = require("helmet");
+const { rateLimit } = require("express-rate-limit");
+
+const { createAuditLog } = require("./audit");
+const { SqliteSessionStore } = require("./session-store");
 
 // ========================================
 // 1. EXPRESS SERVER SETUP
 // ========================================
 
 const app = express();
-const PORT = 4100;
+const PORT = Number(process.env.PORT) || 4100;
 
 // Connect to our existing SQLite database
-const db = new DatabaseSync(
-    path.join(__dirname, "database", "mobile_auto_basics.db")
-);
+const dbPath =
+    process.env.DB_PATH ||
+    path.join(__dirname, "database", "mobile_auto_basics.db");
+
+const db = new DatabaseSync(dbPath);
 
 db.exec("PRAGMA foreign_keys = ON");
+
+// Emails are unique regardless of letter case
+db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower
+        ON users (lower(email))
+`);
 
 // ========================================
 // 2. CREATE SECURITY AUDIT LOG TABLE
@@ -50,21 +69,100 @@ db.exec(`
 // 3. EXPRESS MIDDLEWARE AND SESSIONS
 // ========================================
 
+const isProduction = process.env.NODE_ENV === "production";
+
+app.disable("x-powered-by");
+
+// Only enable behind a reverse proxy you control. Otherwise
+// clients could forge their IP address in audit logs.
+if (process.env.TRUST_PROXY === "1") {
+    app.set("trust proxy", 1);
+}
+
+app.use(helmet({
+    contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'"],
+            imgSrc: ["'self'"],
+            fontSrc: ["'self'"],
+            connectSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            baseUri: ["'self'"],
+            formAction: ["'self'"],
+            frameAncestors: ["'none'"]
+        }
+    },
+    strictTransportSecurity: isProduction
+}));
+
+// CSRF defense: state-changing requests must be same-origin
+app.use((req, res, next) => {
+
+    if (["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+        return next();
+    }
+
+    const origin = req.get("origin");
+    const fetchSite = req.get("sec-fetch-site");
+
+    let sameOrigin =
+        fetchSite === undefined ||
+        ["same-origin", "none"].includes(fetchSite);
+
+    if (origin) {
+        try {
+            sameOrigin = sameOrigin &&
+                new URL(origin).host === req.get("host");
+        } catch {
+            sameOrigin = false;
+        }
+    }
+
+    if (sameOrigin) {
+        return next();
+    }
+
+    logThrottled(req, "CSRF_BLOCKED", "all", {
+        user: null,
+        details: "Cross-origin state-changing request blocked"
+    });
+
+    res.status(403).json({
+        error: "Access denied"
+    });
+});
+
 app.use(express.json({ limit: "10kb" }));
 
 if (!process.env.SESSION_SECRET) {
     throw new Error("SESSION_SECRET is missing");
 }
 
+// Set AUDIT_HMAC_KEY separately so SESSION_SECRET can be rotated
+// without invalidating the audit log's integrity chain.
+const auditLog = createAuditLog(
+    db,
+    process.env.AUDIT_HMAC_KEY || process.env.SESSION_SECRET
+);
+
+const sessionStore = new SqliteSessionStore(
+    process.env.SESSION_DB_PATH ||
+    path.join(path.dirname(dbPath), "sessions.db")
+);
+
 app.use(session({
     name: "mab.sid",
+    store: sessionStore,
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
         httpOnly: true,
         sameSite: "lax",
-        secure: false, // Local HTTP testing only
+        secure: isProduction, // Requires HTTPS in production
         maxAge: 60 * 60 * 1000
     }
 }));
@@ -84,7 +182,19 @@ app.get("/api/health", (req, res) => {
 // 5. PASSWORD VERIFICATION
 // ========================================
 
-function verifyPassword(password, storedPassword) {
+const scryptAsync = promisify(scrypt);
+
+// Hashing is deliberately slow, so cap how many run at once.
+const MAX_CONCURRENT_HASHES = 8;
+let activeHashes = 0;
+
+// Checked when an email is unknown, so both cases take equal time.
+const dummySalt = randomBytes(16).toString("hex");
+const DUMMY_PASSWORD_HASH = `${dummySalt}:${
+    scryptSync(randomBytes(32), dummySalt, 64).toString("hex")
+}`;
+
+async function verifyPassword(password, storedPassword) {
 
     try {
         const [salt, hash] = storedPassword.split(":");
@@ -98,7 +208,7 @@ function verifyPassword(password, storedPassword) {
 
         const storedHash = Buffer.from(hash, "hex");
 
-        const suppliedHash = scryptSync(
+        const suppliedHash = await scryptAsync(
             password,
             salt,
             64
@@ -114,47 +224,121 @@ function verifyPassword(password, storedPassword) {
     }
 }
 
+// Changes whenever the password changes, ending older sessions.
+function credentialFingerprint(passwordHash) {
+
+    return createHmac("sha256", process.env.SESSION_SECRET)
+        .update(`session-credential:${passwordHash}`)
+        .digest("hex");
+}
+
 // ========================================
 // 6. SECURITY AUDIT LOGGING
 // ========================================
 
-function logAudit(userId, eventType, resource, details) {
+function logAudit(req, eventType, options = {}) {
 
-    try {
-        const insert = db.prepare(`
-            INSERT INTO audit_logs (
-                user_id,
-                event_type,
-                resource,
-                details
-            )
-            VALUES (?, ?, ?, ?)
-        `);
+    const user = options.user === undefined
+        ? req.user
+        : options.user;
 
-        insert.run(
-            userId,
-            eventType,
-            resource,
-            details
-        );
+    return auditLog.write({
+        userId: user?.id ?? null,
+        role: user?.role ?? null,
+        eventType,
+        outcome: options.outcome ?? "failure",
+        resource: options.resource ?? req.path,
+        method: req.method,
+        ip: req.ip,
+        details: options.details ?? null
+    });
+}
 
-        console.log(
-            `[AUDIT] ${eventType}: ${details}`
-        );
+// Anonymous requests are cheap to send, so each client and scope
+// writes at most one row per window. This stops unauthenticated
+// traffic from growing the audit table without limit.
+const THROTTLED_LOG_WINDOW_MS = 60 * 1000;
+const THROTTLED_LOG_MAX_KEYS = 10000;
+const throttledLogWindows = new Map();
 
-    } catch (error) {
-        console.error(
-            "Audit logging failed:",
-            error.message
-        );
+function logThrottled(req, eventType, scope, options) {
+
+    const key = `${eventType}|${req.ip}|${scope}`;
+    const now = Date.now();
+    const current = throttledLogWindows.get(key);
+
+    if (current && now - current.startedAt < THROTTLED_LOG_WINDOW_MS) {
+        current.suppressed += 1;
+        return;
     }
+
+    if (throttledLogWindows.size >= THROTTLED_LOG_MAX_KEYS) {
+        throttledLogWindows.clear();
+    }
+
+    throttledLogWindows.set(key, { startedAt: now, suppressed: 0 });
+
+    const repeats = current?.suppressed
+        ? `; ${current.suppressed} repeats in previous window`
+        : "";
+
+    logAudit(req, eventType, {
+        ...options,
+        details: `${options.details}${repeats}`
+    });
 }
 
 // ========================================
 // 7. LOGIN AUTHENTICATION
 // ========================================
 
-app.post("/api/login", (req, res, next) => {
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
+function loginLimiter(limit, keyOptions = {}) {
+
+    return rateLimit({
+        windowMs: LOGIN_WINDOW_MS,
+        limit,
+        standardHeaders: true,
+        legacyHeaders: false,
+        skipSuccessfulRequests: true,
+        // Forwarded headers are intentionally ignored unless
+        // TRUST_PROXY is enabled.
+        validate: { xForwardedForHeader: false },
+        ...keyOptions,
+        handler: (req, res) => {
+
+            logThrottled(req, "LOGIN_RATE_LIMITED", "login", {
+                user: null,
+                resource: "/api/login",
+                details: "Too many failed login attempts"
+            });
+
+            res.status(429).json({
+                error: "Too many login attempts. Please try again later."
+            });
+        }
+    });
+}
+
+const loginIpLimiter = loginLimiter(
+    Number(process.env.LOGIN_MAX_ATTEMPTS_IP) || 20
+);
+
+const loginAccountLimiter = loginLimiter(
+    Number(process.env.LOGIN_MAX_ATTEMPTS_ACCOUNT) || 10,
+    {
+        keyGenerator: (req) => {
+            const email = req.body?.email;
+
+            return typeof email === "string"
+                ? auditLog.pseudonymize(email)
+                : "invalid-login";
+        }
+    }
+);
+
+app.post("/api/login", loginIpLimiter, loginAccountLimiter, async (req, res, next) => {
 
     const {
         email,
@@ -171,6 +355,11 @@ app.post("/api/login", (req, res, next) => {
         email.length > 254 ||
         password.length > 1024
     ) {
+        logAudit(req, "LOGIN_REJECTED", {
+            user: null,
+            details: "Malformed login request"
+        });
+
         return res.status(400).json({
             error: "Valid email and password are required."
         });
@@ -180,6 +369,11 @@ app.post("/api/login", (req, res, next) => {
     const allowedRoles = ["customer", "mechanic", "admin"];
 
     if (!allowedRoles.includes(selectedRole)) {
+        logAudit(req, "LOGIN_REJECTED", {
+            user: null,
+            details: "Invalid account type selected"
+        });
+
         return res.status(400).json({
             error: "Please select a valid account type."
         });
@@ -194,20 +388,44 @@ app.post("/api/login", (req, res, next) => {
             password_hash,
             role
         FROM users
-        WHERE email = ?
-    `).get(email.trim());
+        WHERE lower(email) = ?
+    `).get(email.trim().toLowerCase());
+
+    // Shed load rather than queue unlimited password hashing
+    if (activeHashes >= MAX_CONCURRENT_HASHES) {
+
+        logThrottled(req, "LOGIN_BUSY", "login", {
+            user: null,
+            details: "Login capacity exceeded"
+        });
+
+        res.set("Retry-After", "1");
+
+        return res.status(503).json({
+            error: "Server is busy. Please try again."
+        });
+    }
+
+    let passwordValid = false;
+
+    activeHashes += 1;
+
+    try {
+        passwordValid = await verifyPassword(
+            password,
+            user?.password_hash ?? DUMMY_PASSWORD_HASH
+        );
+    } finally {
+        activeHashes -= 1;
+    }
 
     // Check the password
-    if (
-        !user ||
-        !verifyPassword(password, user.password_hash)
-    ) {
-        logAudit(
-            null,
-            "LOGIN_FAILED",
-            "/api/login",
-            "Invalid login credentials"
-        );
+    if (!user || !passwordValid) {
+        // Same event for unknown email and wrong password.
+        logAudit(req, "LOGIN_FAILED", {
+            user: null,
+            details: `Invalid credentials; identifier=${auditLog.pseudonymize(email)}`
+        });
 
         return res.status(401).json({
             error: "Invalid credentials or account type."
@@ -217,12 +435,10 @@ app.post("/api/login", (req, res, next) => {
     // Verify selected role against SQLite
     if (selectedRole !== user.role) {
 
-        logAudit(
-            user.id,
-            "LOGIN_FAILED",
-            "/api/login",
-            "Selected role does not match account role"
-        );
+        logAudit(req, "LOGIN_FAILED", {
+            user,
+            details: `Selected role ${selectedRole} does not match account role`
+        });
 
         return res.status(401).json({
             error: "Invalid credentials or account type."
@@ -235,18 +451,19 @@ app.post("/api/login", (req, res, next) => {
         if (err) return next(err);
 
         req.session.userId = user.id;
+        req.session.credential =
+            credentialFingerprint(user.password_hash);
 
         req.session.save((err) => {
 
             if (err) return next(err);
 
             // NEW: Log successful authentication
-            logAudit(
-                user.id,
-                "LOGIN_SUCCESS",
-                "/api/login",
-                `User authenticated as ${user.role}`
-            );
+            logAudit(req, "LOGIN_SUCCESS", {
+                user,
+                outcome: "success",
+                details: `User authenticated as ${user.role}`
+            });
 
             res.json({
                 message: "Login successful",
@@ -264,24 +481,61 @@ app.post("/api/login", (req, res, next) => {
 // 8. AUTHENTICATION MIDDLEWARE
 // ========================================
 
+// Ends a session that is no longer valid
+function endSession(req, res) {
+
+    req.session.destroy(() => {
+
+        res.clearCookie("mab.sid");
+
+        res.status(401).json({
+            error: "Authentication required"
+        });
+    });
+}
+
 function requireAuth(req, res, next) {
 
     if (!req.session.userId) {
+        const route = req.route?.path ?? req.path;
+
+        logThrottled(req, "AUTH_REQUIRED", route, {
+            user: null,
+            resource: route,
+            details: "Unauthenticated request to protected route"
+        });
+
         return res.status(401).json({
             error: "Authentication required"
         });
     }
 
-    const user = db.prepare(`
-        SELECT id, name, email, role
+    const account = db.prepare(`
+        SELECT id, name, email, role, password_hash
         FROM users
         WHERE id = ?
     `).get(req.session.userId);
 
-    if (!user) {
-        return res.status(401).json({
-            error: "Authentication required"
+    if (!account) {
+        logAudit(req, "SESSION_INVALID", {
+            user: null,
+            details: `Session references missing user ${req.session.userId}`
         });
+
+        return endSession(req, res);
+    }
+
+    // Never attach the password hash to req.user
+    const { password_hash: passwordHash, ...user } = account;
+
+    if (credentialFingerprint(passwordHash) !== req.session.credential) {
+
+        logAudit(req, "SESSION_INVALID", {
+            user,
+            details: "Session ended because the password changed"
+        });
+
+        return endSession(req, res);
     }
 
     req.user = user;
@@ -299,12 +553,9 @@ function requireRole(role) {
         if (req.user.role !== role) {
 
             // NEW: Record unauthorized access
-            logAudit(
-                req.user.id,
-                "ACCESS_DENIED",
-                req.path,
-                `Role ${req.user.role} attempted ${role} access`
-            );
+            logAudit(req, "ACCESS_DENIED", {
+                details: `Role ${req.user.role} attempted ${role} access`
+            });
 
             return res.status(403).json({
                 error: "Access denied"
@@ -385,9 +636,15 @@ app.get(
 
         // Validate appointment ID
         if (
+            !/^[1-9][0-9]*$/.test(req.params.id) ||
             !Number.isSafeInteger(appointmentId) ||
             appointmentId <= 0
         ) {
+            logAudit(req, "INVALID_INPUT", {
+                resource: "/api/customer/appointments/:id",
+                details: "Invalid appointment ID"
+            });
+
             return res.status(400).json({
                 error: "Invalid appointment ID"
             });
@@ -408,12 +665,10 @@ app.get(
         if (!appointment) {
 
             // NEW: Log failed appointment access
-            logAudit(
-                req.user.id,
-                "APPOINTMENT_ACCESS_DENIED",
-                "/api/customer/appointments/:id",
-                `Appointment ${appointmentId} unavailable to user`
-            );
+            logAudit(req, "APPOINTMENT_ACCESS_DENIED", {
+                resource: "/api/customer/appointments/:id",
+                details: `Appointment ${appointmentId} unavailable to user`
+            });
 
             return res.status(404).json({
                 error: "Appointment not found"
@@ -459,6 +714,12 @@ app.get(
             ORDER BY wt.id
         `).all(req.user.id);
 
+        // These records include customer names
+        logAudit(req, "CUSTOMER_DATA_VIEWED", {
+            outcome: "success",
+            details: `Viewed ${tickets.length} assigned work tickets`
+        });
+
         res.json({
             tickets: tickets
         });
@@ -474,19 +735,18 @@ app.post(
     requireAuth,
     (req, res, next) => {
 
-        const userId = req.user.id;
+        const user = req.user;
 
         req.session.destroy((err) => {
 
             if (err) return next(err);
 
             // NEW: Record successful logout
-            logAudit(
-                userId,
-                "LOGOUT",
-                "/api/logout",
-                "User logged out successfully"
-            );
+            logAudit(req, "LOGOUT", {
+                user,
+                outcome: "success",
+                details: "User logged out successfully"
+            });
 
             res.clearCookie("mab.sid");
 
@@ -512,9 +772,13 @@ app.get(
         const logs = db.prepare(`
             SELECT
                 id,
-                user_id,
+                COALESCE(actor_id, user_id) AS user_id,
+                actor_role,
                 event_type,
+                outcome,
+                http_method,
                 resource,
+                ip_address,
                 details,
                 created_at
             FROM audit_logs
@@ -522,9 +786,34 @@ app.get(
             LIMIT 50
         `).all();
 
+        // Reading the audit trail is itself audited
+        logAudit(req, "AUDIT_LOG_VIEWED", {
+            outcome: "success",
+            details: `Viewed ${logs.length} audit entries`
+        });
+
         res.json({
             logs: logs
         });
+    }
+);
+
+app.get(
+    "/api/admin/audit-logs/verify",
+    requireAuth,
+    requireRole("admin"),
+    (req, res) => {
+
+        const result = auditLog.verify();
+
+        logAudit(req, "AUDIT_INTEGRITY_CHECK", {
+            outcome: result.valid ? "success" : "failure",
+            details: result.valid
+                ? `Verified ${result.checked} entries`
+                : `Chain broken at entry ${result.brokenAt}: ${result.reason}`
+        });
+
+        res.json(result);
     }
 );
 
@@ -537,12 +826,46 @@ app.use(express.static(
 ));
 
 // ========================================
-// 17. START SERVER
+// 17. RECORD REQUEST ERRORS
 // ========================================
 
-app.listen(PORT, "127.0.0.1", () => {
+app.use((err, req, res, next) => {
 
-    console.log(
-        `Server running at http://127.0.0.1:${PORT}`
-    );
+    const status = err.status >= 400 && err.status < 600
+        ? err.status
+        : 500;
+
+    logThrottled(req, "REQUEST_ERROR", String(status), {
+        outcome: "error",
+        details: `${err.type || err.name}; status ${status}`
+    });
+
+    if (status >= 500) {
+        console.error("Request error:", err);
+    }
+
+    if (res.headersSent) {
+        return next(err);
+    }
+
+    // Never send stack traces or internal details to the client
+    res.status(status).json({
+        error: status >= 500 ? "Internal server error" : "Invalid request"
+    });
 });
+
+// ========================================
+// 18. START SERVER
+// ========================================
+
+if (require.main === module) {
+
+    app.listen(PORT, "127.0.0.1", () => {
+
+        console.log(
+            `Server running at http://127.0.0.1:${PORT}`
+        );
+    });
+}
+
+module.exports = { app, db, auditLog, sessionStore };

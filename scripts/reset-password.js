@@ -20,7 +20,7 @@ if (!allowedEmails.includes(email)) {
     process.exit(1);
 }
 
-if (!password || password.length < 4) {
+if (!password || password.length < 12) {
     console.error("Password must be at least 12 characters.");
     process.exit(1);
 }
