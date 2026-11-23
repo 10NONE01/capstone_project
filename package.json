@@ -1,4 +1,3 @@
-
 {
   "name": "capstone_project",
   "version": "1.0.0",
@@ -7,6 +6,7 @@
   "scripts": {
     "start": "node --env-file=.env server.js",
     "dev": "node --env-file=.env server.js",
+    "test": "node --test",
     "db:init": "node scripts/init-db.js",
     "db:seed": "node scripts/seed-users.js",
     "db:rbac": "node scripts/setup-rbac-demo.js",
@@ -25,6 +25,8 @@
   "type": "commonjs",
   "dependencies": {
     "express": "^5.3.0",
-    "express-session": "^1.19.0"
+    "express-rate-limit": "^8.7.5",
+    "express-session": "^1.19.0",
+    "helmet": "^8.3.0"
   }
 }

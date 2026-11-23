@@ -12,7 +12,7 @@ const adminEmail = "admin@demo.invalid";
 const adminPassword = process.env.ADMIN_PASSWORD;
 
 // Password must be at least 12 characters
-if (!adminPassword || adminPassword.length < 4) {
+if (!adminPassword || adminPassword.length < 12) {
     console.error(
         "Admin password must be at least 12 characters."
     );

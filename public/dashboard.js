@@ -326,8 +326,12 @@ async function loadAuditLogs() {
             "ID",
             "Timestamp (UTC)",
             "User ID",
+            "Role",
             "Event",
+            "Outcome",
+            "Method",
             "Resource",
+            "IP Address",
             "Details"
         ];
 
@@ -352,8 +356,12 @@ async function loadAuditLogs() {
                 log.id,
                 log.created_at,
                 log.user_id ?? "Unknown",
+                log.actor_role ?? "N/A",
                 log.event_type,
+                log.outcome ?? "N/A",
+                log.http_method ?? "N/A",
                 log.resource ?? "N/A",
+                log.ip_address ?? "N/A",
                 log.details ?? ""
             ];
 
